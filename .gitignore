@@ -1,0 +1,55 @@
+# data + pipeline artefacts (never commit)
+ayekoo_stage/
+videos/
+frames/
+images/
+no_people/
+people/
+inpaint_input/
+masks/
+inpainted/
+final_dataset/
+final_audit/
+drop_review/
+*.jsonl
+*.parquet
+FINAL_REPORT.txt
+DONE
+.urlqueue/
+.urlqueue_failed/
+urls.txt.bak
+archive.txt
+failed.txt
+cookies.txt
+
+# secrets
+.secrets/
+config.env
+.env
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+
+# model caches
+hf_cache/
+.cache/
+
+# logs / markers / pid
+logs/
+*.pid
+*.lock
+*.done
+*_sheet.jpg
+refine_viz/
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/

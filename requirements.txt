@@ -1,0 +1,29 @@
+# Core
+numpy>=1.24
+pandas>=2.0
+Pillow>=10.0
+scipy>=1.10
+tqdm>=4.66
+
+# Frame extraction / video handling
+# (system) ffmpeg, ffprobe
+
+# People filtering (Qwen2.5-VL, GPU)
+torch>=2.2
+transformers>=4.49
+accelerate>=0.30
+qwen-vl-utils>=0.0.8
+
+# People filtering (CPU / YOLO alternative)
+ultralytics>=8.2
+
+# Overlay inpainting (LaMa)
+simple-lama-inpainting>=0.1.2
+opencv-python-headless>=4.9
+
+# Downloading
+# (system) yt-dlp, aria2c
+
+# Dataset publishing
+huggingface_hub>=0.23
+datasets>=2.19
