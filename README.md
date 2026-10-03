@@ -6,9 +6,6 @@ frames with people → detect watermarks/logos/lower-thirds with Gemini → inpa
 the overlays with LaMa → assemble a captioned dataset and publish it to the
 HuggingFace Hub.
 
-**Author:** [Ghana Open AI](https://huggingface.co/ghanaopenai) — the code and the
-resulting dataset are released by [Ghana Open AI](https://huggingface.co/ghanaopenai).
-
 <p align="center">
   <img src="docs/pilot_compare_sheet_v3.jpg" alt="before / after LaMa overlay removal" width="900">
   <br><em>Left: raw frame with watermark & lower-third. Right: LaMa-inpainted result.</em>

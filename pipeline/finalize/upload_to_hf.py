@@ -11,6 +11,7 @@ Requires a token with write access, e.g.:
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 
 from huggingface_hub import HfApi, create_repo
@@ -27,11 +28,19 @@ def main():
     ap.add_argument("--private", action="store_true")
     ap.add_argument("--token", default=os.environ.get("HF_TOKEN"))
     ap.add_argument("--revision", default="main")
+    ap.add_argument("--card", default="",
+                    help="dataset card markdown copied to the repo root as README.md")
     args = ap.parse_args()
 
     folder = Path(args.project_dir) / args.data_dir
     if not folder.exists():
         raise SystemExit(f"data dir not found: {folder}")
+
+    if args.card:
+        card = Path(args.card)
+        if not card.exists():
+            raise SystemExit(f"card not found: {card}")
+        shutil.copy2(card, folder / "README.md")
 
     api = HfApi(token=args.token)
     create_repo(args.repo_id, repo_type="dataset", exist_ok=True,
