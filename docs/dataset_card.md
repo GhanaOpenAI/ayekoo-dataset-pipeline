@@ -15,16 +15,23 @@ configs:
   - config_name: default
     data_files:
       - split: train
-        path: metadata.csv
+        path: data/train-*.parquet
 ---
 
 # Ayekoo
 
 **Author:** [Ghana Open AI](https://huggingface.co/ghanaopenai)
 
-Ayekoo is a captioned still-image dataset built from Ghanaian agriculture
-television programming. Each frame is a real photograph with on-screen overlays
-removed and no people, paired with a short grounded English caption.
+Ayekoo is a captioned still-image dataset built from **Ayekoo**, the Ghanaian
+agriculture television programme broadcast on **UTV** (Ghana). Each frame is a
+real photograph with on-screen overlays removed and no people, paired with a
+short grounded English caption.
+
+> **Acknowledgement.** This dataset is derived from the *Ayekoo* programme
+> hosted on **UTV**. We gratefully acknowledge the *Ayekoo* team and UTV Ghana —
+> their work creating and broadcasting the programme is what made this dataset
+> possible. All underlying footage remains the property of its original
+> creators.
 
 ## How it was built
 
@@ -40,10 +47,21 @@ removed and no people, paired with a short grounded English caption.
 
 Code: [GhanaOpenAI/ayekoo-dataset-pipeline](https://github.com/GhanaOpenAI/ayekoo-dataset-pipeline)
 
+## Dataset at a glance
+
+| | |
+|--|--|
+| Frames | **88,158** |
+| Source videos | 294 (*Ayekoo*, UTV) |
+| Resolution | 1920×1080 |
+| Captions | 1 grounded English sentence per frame (Gemini) |
+| Overlays removed | 87,248 frames LaMa-inpainted; 910 frames had no overlay |
+| People | none |
+
 ## Files
 
-- `*.jpg` — cleaned frames (1920×1080).
-- `metadata.csv` — one row per frame.
+- `data/train-*-of-*.parquet` — frames + captions (an `image` column with embedded JPEGs and a `caption` column).
+- `metadata.csv` — the same rows without image bytes, for quick inspection.
 
 ### Metadata fields
 
@@ -70,8 +88,18 @@ ds = load_dataset("ghanaopenai/ayekoo", split="train")
 print(ds[0]["caption"], ds[0]["image"].size)
 ```
 
+## Acknowledgements
+
+The images were extracted from ***Ayekoo***, the Ghanaian agricultural
+television programme **hosted on UTV**. We thank the *Ayekoo* team and UTV
+Ghana for producing and broadcasting the programme; it is the work that made
+this dataset possible. Please credit *Ayekoo* (UTV) when using this dataset.
+
 ## License and attribution
 
 Released under the MIT License. Built by [Ghana Open AI](https://huggingface.co/ghanaopenai).
-Source videos remain the property of their original creators; this dataset
-contains derived still frames with on-screen graphics removed.
+The source footage is from the ***Ayekoo*** programme hosted on **UTV** (Ghana);
+the programme and its creators retain all rights to the underlying video. This
+dataset contains derived still frames with on-screen graphics removed and is
+shared for research and non-commercial use with acknowledgement to *Ayekoo*
+(UTV).
