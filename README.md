@@ -174,4 +174,5 @@ python pipeline/finalize/upload_to_hf.py --repo-id ghanaopenai/ayekoo
 
 ## License
 
-MIT © [Ghana Open AI](https://huggingface.co/ghanaopenai). See [LICENSE](LICENSE).
+MIT © [Ghana Open AI](https://huggingface.co/ghanaopenai). Supported by
+[Ghana NLP](https://ghananlp.org). See [LICENSE](LICENSE).

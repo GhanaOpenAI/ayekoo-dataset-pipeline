@@ -38,11 +38,14 @@ def main():
     data.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(meta)
+    has_prompt = "prompt_text" in df.columns
     cols = ["image_id", "image_filename", "video_id", "video_title",
-            "video_url", "timestamp_seconds", "caption", "had_overlay",
-            "overlay_inpainted", "n_boxes"]
+            "video_url", "timestamp_seconds", "caption"]
+    if has_prompt:
+        cols.append("prompt_text")
+    cols += ["had_overlay", "overlay_inpainted", "n_boxes"]
     df = df[cols]
-    features = Features({
+    feat = {
         "image": Image(),
         "image_id": Value("string"),
         "image_filename": Value("string"),
@@ -51,13 +54,17 @@ def main():
         "video_url": Value("string"),
         "timestamp_seconds": Value("float64"),
         "caption": Value("string"),
-        "had_overlay": Value("bool"),
-        "overlay_inpainted": Value("bool"),
-        "n_boxes": Value("int64"),
-    })
+    }
+    if has_prompt:
+        feat["prompt_text"] = Value("string")
+    feat["had_overlay"] = Value("bool")
+    feat["overlay_inpainted"] = Value("bool")
+    feat["n_boxes"] = Value("int64")
+    features = Features(feat)
     n = len(df)
     per = math.ceil(n / args.shards)
-    print(f"{n} rows -> {args.shards} shards of ~{per}", flush=True)
+    print(f"{n} rows -> {args.shards} shards of ~{per} (prompt_text={has_prompt})",
+          flush=True)
 
     for i in range(args.shards):
         lo, hi = i * per, min((i + 1) * per, n)
@@ -66,7 +73,7 @@ def main():
         recs = []
         for row in df.iloc[lo:hi].itertuples(index=False):
             b = (img_dir / row.image_filename).read_bytes()
-            recs.append({
+            rec = {
                 "image": {"bytes": b, "path": row.image_filename},
                 "image_id": row.image_id,
                 "image_filename": row.image_filename,
@@ -75,10 +82,13 @@ def main():
                 "video_url": row.video_url,
                 "timestamp_seconds": row.timestamp_seconds,
                 "caption": row.caption,
-                "had_overlay": bool(row.had_overlay),
-                "overlay_inpainted": bool(row.overlay_inpainted),
-                "n_boxes": int(row.n_boxes),
-            })
+            }
+            if has_prompt:
+                rec["prompt_text"] = row.prompt_text
+            rec["had_overlay"] = bool(row.had_overlay)
+            rec["overlay_inpainted"] = bool(row.overlay_inpainted)
+            rec["n_boxes"] = int(row.n_boxes)
+            recs.append(rec)
         part = f"train-{i:05d}-of-{args.shards:05d}.parquet"
         Dataset.from_list(recs, features=features).to_parquet(str(data / part))
         print(f"  wrote {part} ({hi - lo} rows)", flush=True)
