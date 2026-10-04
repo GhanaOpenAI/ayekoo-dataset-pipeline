@@ -3,20 +3,23 @@
 
 Two Gemini text passes (no image needed):
 
-  Stage A (classify): every unique caption -> 0 or 1
+  Stage A (classify): every unique kept caption -> 0 or 1
       0 = caption describes only the real-world scene
       1 = caption mentions an on-screen/graphic/interface element
   Stage B (rewrite): only the captions flagged 1 are rewritten to drop
       those references, describing the real-world scene instead.
 
-All requests are batched and fully resumable (captions_map.jsonl).  The
-output `gemini_detections.clean.jsonl` is a copy of the input with each
+Requests are batched and results are persisted INCREMENTALLY, so the job
+is fully resumable (kill/restart anytime):
+    captions_classify.jsonl : {"caption":..,"flag":0|1}
+    captions_rewrite.jsonl  : {"caption":..,"clean":".."}
+
+Final output `gemini_detections.clean.jsonl` is the input with each kept
 caption replaced by its cleaned version (unchanged when flag == 0).
 
 Usage:
     python clean_captions.py --project-dir "$AYEKOO_PROJECT_DIR" \
-        --detections gemini_detections.jsonl \
-        --out gemini_detections.clean.jsonl
+        --key-file /path/to/gemini_key --workers 32 --classify-batch 100
 """
 import argparse
 import json
@@ -41,7 +44,7 @@ CLASSIFY_PROMPT = (
     "on-screen text, text overlay, sign/billboard text, channel bug, border, "
     "frame, UI, or phrases like 'the image shows', 'on screen', 'screenshot', "
     "'in the corner', 'at the bottom'. Otherwise return 0.\n\n"
-    "Rank each caption below. Return JSON only.\nCaptions:\n"
+    "Label each caption below. Return JSON only.\nCaptions:\n"
 )
 
 REWRITE_PROMPT = (
@@ -64,7 +67,7 @@ CLASSIFY_SCHEMA = {
                 "type": "OBJECT",
                 "properties": {
                     "i": {"type": "INTEGER"},
-                    "v": {"type": "INTEGER", "enum": [0, 1]},
+                    "v": {"type": "STRING", "enum": ["0", "1"]},
                 },
                 "required": ["i", "v"],
             },
@@ -161,8 +164,9 @@ def classify_batch(api_key, model, caps, timeout, retries):
         return None, f"parse: {e}"
     out = {}
     for it in labels:
-        if isinstance(it.get("i"), int) and it.get("v") in (0, 1):
-            out[it["i"]] = int(it["v"])
+        v = it.get("v")
+        if isinstance(it.get("i"), int) and v in (0, 1, "0", "1"):
+            out[it["i"]] = int(v)
     if len(out) != len(caps):
         return None, f"misaligned: {len(out)}/{len(caps)}"
     return [out[i] for i in range(len(caps))], None
@@ -187,49 +191,67 @@ def rewrite_batch(api_key, model, caps, timeout, retries):
     return [out[i] for i in range(len(caps))], None
 
 
-def run_batches(fn, api_key, model, caps, batch_size, workers,
-                timeout, retries, label):
-    """fn returns (list_aligned_or_None, err). Falls back to per-item on failure."""
-    results = [None] * len(caps)
-    batches = list(_chunks(list(range(len(caps))), batch_size))
+class Appender:
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.count = 0
+
+    def add(self, obj):
+        line = json.dumps(obj) + "\n"
+        with self.lock:
+            with self.path.open("a") as f:
+                f.write(line)
+            self.count += 1
+
+
+def run_batches(fn, api_key, model, items, batch_size, workers,
+                timeout, retries, label, on_item):
+    total = len(items)
     done = 0
     errs = 0
+    t0 = time.time()
     lock = threading.Lock()
 
     def work(idx_range):
-        sub = [caps[i] for i in idx_range]
+        sub = [items[i] for i in idx_range]
         vals, err = fn(api_key, model, sub, timeout, retries)
-        if vals is not None:
-            return idx_range, vals, None
-        if len(idx_range) > 1:
-            vals2, err2 = fn(api_key, model, sub, timeout, retries)
-            if vals2 is not None:
-                return idx_range, vals2, None
-        out = []
-        bad = 0
-        for c in sub:
-            v, e = fn(api_key, model, [c], timeout, retries)
-            if v is not None:
-                out.append(v[0])
-            else:
-                out.append(None)
-                bad += 1
-        return idx_range, out, (bad or err)
+        if vals is None:
+            vals, err = fn(api_key, model, sub, timeout, retries)
+        if vals is None:
+            out = []
+            for c in sub:
+                v, e = fn(api_key, model, [c], timeout, retries)
+                out.append(v[0] if v is not None else None)
+            return idx_range, out, (err or "fallback")
+        return idx_range, vals, None
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = [ex.submit(work, br) for br in batches]
+        futs = [ex.submit(work, br) for br in _chunks(list(range(total)), batch_size)]
         for fut in as_completed(futs):
             idx_range, vals, err = fut.result()
             with lock:
-                for off, i in enumerate(idx_range):
-                    results[i] = vals[off]
+                for off, gi in enumerate(idx_range):
+                    if vals[off] is not None:
+                        on_item(gi, vals[off])
                 done += len(idx_range)
                 if err:
                     errs += 1
-                if done % 500 < batch_size or done == len(caps):
-                    log(f"  {label}: {done}/{len(caps)} batches processed "
-                        f"({errs} with per-item fallback)")
-    return results, errs
+                if done % 500 == 0 or done >= total:
+                    rate = done / max(1e-9, time.time() - t0)
+                    log(f"  {label}: {done}/{total} | {rate:.0f}/s | "
+                        f"{errs} fallbacks")
+    return errs
+
+
+def load_jsonl_map(path, key, val):
+    d = {}
+    if path.exists():
+        for l in path.read_text().splitlines():
+            if l.strip():
+                r = json.loads(l)
+                d[r[key]] = r[val]
+    return d
 
 
 def main():
@@ -237,14 +259,15 @@ def main():
     ap.add_argument("--project-dir", default=DEFAULT_PROJECT_DIR)
     ap.add_argument("--detections", default="gemini_detections.jsonl")
     ap.add_argument("--out", default="gemini_detections.clean.jsonl")
-    ap.add_argument("--map", default="captions_map.jsonl")
+    ap.add_argument("--classify-file", default="captions_classify.jsonl")
+    ap.add_argument("--rewrite-file", default="captions_rewrite.jsonl")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--key-file", default=DEFAULT_KEY_FILE)
-    ap.add_argument("--workers", type=int, default=16)
-    ap.add_argument("--classify-batch", type=int, default=50)
-    ap.add_argument("--rewrite-batch", type=int, default=20)
+    ap.add_argument("--workers", type=int, default=32)
+    ap.add_argument("--classify-batch", type=int, default=100)
+    ap.add_argument("--rewrite-batch", type=int, default=30)
     ap.add_argument("--timeout", type=int, default=120)
-    ap.add_argument("--retries", type=int, default=4)
+    ap.add_argument("--retries", type=int, default=5)
     args = ap.parse_args()
 
     if not args.key_file:
@@ -252,14 +275,11 @@ def main():
     api_key = Path(args.key_file).read_text().strip()
     proj = Path(args.project_dir)
     det_path = proj / args.detections
-    out_path = proj / args.out
-    map_path = proj / args.map
+    classify_path = proj / args.classify_file
+    rewrite_path = proj / args.rewrite_file
 
     records = [json.loads(l) for l in det_path.read_text().splitlines() if l.strip()]
-    log(f"loaded {len(records)} detections from {det_path}")
-
-    unique = []
-    seen = set()
+    unique, seen = [], set()
     for r in records:
         if r.get("error") or r.get("drop"):
             continue
@@ -267,66 +287,53 @@ def main():
         if c and c not in seen:
             seen.add(c)
             unique.append(c)
-    log(f"{len(unique)} unique captions")
+    log(f"{len(unique)} unique kept captions")
 
-    mapping = {}
-    if map_path.exists():
-        for l in map_path.read_text().splitlines():
-            if l.strip():
-                d = json.loads(l)
-                mapping[d["caption"]] = d
-
-    to_classify = [c for c in unique if c not in mapping]
-    log(f"stage A (classify): {len(to_classify)} to process")
+    flags = load_jsonl_map(classify_path, "caption", "flag")
+    to_classify = [c for c in unique if c not in flags]
+    log(f"stage A (classify): {len(to_classify)} remaining / {len(unique)}")
     if to_classify:
-        flags, errs = run_batches(
-            classify_batch, api_key, args.model, to_classify,
-            args.classify_batch, args.workers, args.timeout, args.retries,
-            "classify")
-        with map_path.open("a") as f:
-            for c, v in zip(to_classify, flags):
-                flag = int(v) if v in (0, 1) else 0
-                rec = {"caption": c, "flag": flag}
-                mapping[c] = rec
-                f.write(json.dumps(rec) + "\n")
-        log(f"stage A done ({errs} fallbacks)")
+        app = Appender(classify_path)
 
-    to_rewrite = [c for c in unique
-                  if mapping.get(c, {}).get("flag") == 1
-                  and not mapping.get(c, {}).get("clean")]
-    log(f"stage B (rewrite): {len(to_rewrite)} flagged captions")
+        def on_flag(gi, v):
+            c = to_classify[gi]
+            flags[c] = int(v)
+            app.add({"caption": c, "flag": int(v)})
+
+        run_batches(classify_batch, api_key, args.model, to_classify,
+                    args.classify_batch, args.workers, args.timeout,
+                    args.retries, "classify", on_flag)
+    nflag = sum(1 for c in unique if flags.get(c) == 1)
+    log(f"stage A complete: {nflag} flagged of {len(unique)}")
+
+    cleans = load_jsonl_map(rewrite_path, "caption", "clean")
+    to_rewrite = [c for c in unique if flags.get(c) == 1 and not cleans.get(c)]
+    log(f"stage B (rewrite): {len(to_rewrite)} remaining / {nflag} flagged")
     if to_rewrite:
-        rewrites, errs = run_batches(
-            rewrite_batch, api_key, args.model, to_rewrite,
-            args.rewrite_batch, args.workers, args.timeout, args.retries,
-            "rewrite")
-        updates = {}
-        for c, v in zip(to_rewrite, rewrites):
-            if v:
-                updates[c] = v
-        log(f"stage B done: {len(updates)} rewritten ({errs} fallbacks)")
-        tmp = map_path.with_suffix(".tmp")
-        with tmp.open("w") as f:
-            for c in unique:
-                rec = mapping[c]
-                if c in updates:
-                    rec = {"caption": c, "flag": 1, "clean": updates[c]}
-                f.write(json.dumps(rec) + "\n")
-        tmp.replace(map_path)
-        for c, v in updates.items():
-            mapping[c]["clean"] = v
+        app = Appender(rewrite_path)
 
+        def on_clean(gi, v):
+            c = to_rewrite[gi]
+            v = (v or "").strip()
+            if v:
+                cleans[c] = v
+                app.add({"caption": c, "clean": v})
+
+        run_batches(rewrite_batch, api_key, args.model, to_rewrite,
+                    args.rewrite_batch, args.workers, args.timeout,
+                    args.retries, "rewrite", on_clean)
+
+    out_path = proj / args.out
     cleaned = 0
     with out_path.open("w") as f:
         for r in records:
             c = (r.get("caption") or "").strip()
-            m = mapping.get(c)
-            if m and m.get("clean"):
-                r["caption"] = m["clean"]
+            if flags.get(c) == 1 and cleans.get(c):
+                r["caption"] = cleans[c]
                 cleaned += 1
             f.write(json.dumps(r) + "\n")
-    flagged = sum(1 for c in unique if mapping.get(c, {}).get("flag") == 1)
-    log(f"wrote {out_path.name}: {flagged} flagged captions, {cleaned} records rewritten")
+    log(f"wrote {out_path.name}: {len(cleans)} rewritten captions, "
+        f"{cleaned} records updated")
 
 
 if __name__ == "__main__":
