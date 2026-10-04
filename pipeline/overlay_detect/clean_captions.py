@@ -261,7 +261,7 @@ def main():
     unique = []
     seen = set()
     for r in records:
-        if r.get("error"):
+        if r.get("error") or r.get("drop"):
             continue
         c = (r.get("caption") or "").strip()
         if c and c not in seen:
