@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Wait for the recaption run to finish, then:
-#   merge descriptive_text -> metadata.csv -> rebuild HF parquet shards -> upload.
+#   clean text-referencing descriptions -> merge descriptive_text ->
+#   rebuild HF parquet shards -> upload.
 set -euo pipefail
 
 P="${AYEKOO_PROJECT_DIR:-/mnt/volume_d2wey28/projects/ayekoo-videos}"
@@ -10,10 +11,15 @@ echo "[finalize] waiting for recaption DONE..."
 while ! grep -q "DONE processed=" logs/recaption.log 2>/dev/null; do
   sleep 60
 done
-echo "[finalize] recaption finished; merging descriptions"
+echo "[finalize] recaption finished"
 
 source .venv/bin/activate
-python merge_descriptive.py --project-dir "$P"
+echo "[finalize] cleaning descriptions that mention text/graphics"
+python clean_descriptive.py --project-dir "$P" --key-file "$P/.secrets/gemini_key" \
+  --workers 32
+
+echo "[finalize] merging descriptions"
+python merge_descriptive.py --project-dir "$P" --prompts detailed_prompts.clean.jsonl
 
 echo "[finalize] rebuilding parquet shards"
 source .venv-hf/bin/activate
