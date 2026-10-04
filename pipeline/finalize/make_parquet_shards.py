@@ -38,11 +38,11 @@ def main():
     data.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(meta)
-    has_prompt = "prompt_text" in df.columns
+    has_prompt = "descriptive_text" in df.columns
     cols = ["image_id", "image_filename", "video_id", "video_title",
             "video_url", "timestamp_seconds", "caption"]
     if has_prompt:
-        cols.append("prompt_text")
+        cols.append("descriptive_text")
     cols += ["had_overlay", "overlay_inpainted", "n_boxes"]
     df = df[cols]
     feat = {
@@ -56,14 +56,14 @@ def main():
         "caption": Value("string"),
     }
     if has_prompt:
-        feat["prompt_text"] = Value("string")
+        feat["descriptive_text"] = Value("string")
     feat["had_overlay"] = Value("bool")
     feat["overlay_inpainted"] = Value("bool")
     feat["n_boxes"] = Value("int64")
     features = Features(feat)
     n = len(df)
     per = math.ceil(n / args.shards)
-    print(f"{n} rows -> {args.shards} shards of ~{per} (prompt_text={has_prompt})",
+    print(f"{n} rows -> {args.shards} shards of ~{per} (descriptive_text={has_prompt})",
           flush=True)
 
     for i in range(args.shards):
@@ -84,7 +84,7 @@ def main():
                 "caption": row.caption,
             }
             if has_prompt:
-                rec["prompt_text"] = row.prompt_text
+                rec["descriptive_text"] = row.descriptive_text
             rec["had_overlay"] = bool(row.had_overlay)
             rec["overlay_inpainted"] = bool(row.overlay_inpainted)
             rec["n_boxes"] = int(row.n_boxes)

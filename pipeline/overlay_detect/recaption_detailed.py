@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Generate detailed, grounded text-to-image prompts for the final frames.
+"""Generate detailed, grounded descriptive text for the final frames.
 
-For each image in the finalized dataset this asks Gemini for a rich prompt:
+For each image in the finalized dataset this asks Gemini for a rich description:
 
     leading sentence (subject + count + attributes + action + setting),
     then semicolon-separated facets: props, environment, lighting/time,
     camera framing, and Ghana/West-African location context.
 
-The model is told the frames are stills from "Ayekoo" (a Ghanaian
-agricultural TV programme on UTV) so it can use plausible Ghanaian context
-that is consistent with what is visible, without inventing details.
+The model is told the images come from Ghana and show agriculture/farming so it
+can use plausible Ghanaian context that is consistent with what is visible,
+without inventing details.
 
 Output is appended to a JSONL file (one record per image) so the run is
 fully resumable.
@@ -50,7 +50,7 @@ PROMPT = (
     "quality/style tags such as \"masterpiece\", \"8k\", \"photorealistic\", "
     "\"high resolution\"; do not invent details; do not name people.\n"
     "Respond with JSON only.\n"
-    "Example: {\"prompt_text\": \"About a dozen white-and-brown sheep and goats "
+    "Example: {\"descriptive_text\": \"About a dozen white-and-brown sheep and goats "
     "feed on dry hay inside an open-sided enclosure with rough timber posts and a "
     "corrugated roof; bare earth ground; soft overcast daylight; medium-wide "
     "eye-level shot; rural farm.\"}"
@@ -58,8 +58,8 @@ PROMPT = (
 
 RESPONSE_SCHEMA = {
     "type": "OBJECT",
-    "properties": {"prompt_text": {"type": "STRING"}},
-    "required": ["prompt_text"],
+    "properties": {"descriptive_text": {"type": "STRING"}},
+    "required": ["descriptive_text"],
 }
 
 
@@ -178,13 +178,13 @@ def main():
             key, args.model, img, PROMPT,
             args.timeout, args.max_retries)
         parsed = parse_json_object(txt) if not err else None
-        prompt = (parsed or {}).get("prompt_text")
+        prompt = (parsed or {}).get("descriptive_text")
         if isinstance(prompt, str):
             prompt = prompt.strip()[:800] or None
         out = {
             "image_id": img_id,
             "image_filename": rec.get("image_filename"),
-            "prompt_text": prompt,
+            "descriptive_text": prompt,
             "model": args.model,
             "usage": usage,
             "error": err,

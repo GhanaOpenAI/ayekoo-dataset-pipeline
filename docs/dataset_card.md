@@ -46,9 +46,9 @@ short grounded English caption.
    one-sentence caption from the frame plus its source-video title/URL.
 4. **Inpainting** — detected overlays were removed with LaMa, filling the whole
    graphic rectangle.
-5. **Detailed prompts** — Gemini re-read every cleaned frame, with Ghana /
-   agriculture context, and wrote a detailed, grounded `prompt_text` for
-   text-to-image training.
+5. **Detailed descriptions** — Gemini re-read every cleaned frame, with Ghana /
+   agriculture context, and wrote a detailed, grounded `descriptive_text` for
+   each image.
 
 Code: [GhanaOpenAI/ayekoo-dataset-pipeline](https://github.com/GhanaOpenAI/ayekoo-dataset-pipeline)
 
@@ -80,7 +80,7 @@ Code: [GhanaOpenAI/ayekoo-dataset-pipeline](https://github.com/GhanaOpenAI/ayeko
 | `video_url` | source video URL |
 | `timestamp_seconds` | frame position in the source video |
 | `caption` | short grounded English caption (Gemini) |
-| `prompt_text` | detailed, grounded text-to-image prompt (subject + attributes + setting + lighting + camera) |
+| `descriptive_text` | detailed visual description of the frame (subject + attributes + setting + lighting + camera) |
 | `had_overlay` | whether any overlay was detected |
 | `overlay_inpainted` | whether this frame was LaMa-inpainted |
 | `n_boxes` | number of detected overlay boxes |
